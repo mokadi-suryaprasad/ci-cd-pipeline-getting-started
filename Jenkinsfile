@@ -103,26 +103,25 @@ pipeline {
     }
 
     stage('9. OWASP ZAP DAST Scan & Report') {
-      steps {
+     steps {
         sh '''
           set -e
           docker rm -f python-zaptest || true
+          docker run -d -p 8081:8080 --name python-zaptest development/namespace:$BUILD_TAG
+          sleep 60  # increased wait time for app to be ready
 
-          # Run app container on port 8081 to avoid Jenkins 8080 conflict
-          docker run -d -p 8081:8080 --name python-zaptest $ECR_REPO:$BUILD_TAG
-          sleep 20
+          docker run --rm --network="host" \
+          -v $WORKSPACE:/zap/wrk:rw \
+         -t ghcr.io/zaproxy/zaproxy:weekly \
+         zap-baseline.py \
+         -t http://localhost:8081 \
+         -r dast-report.html \
+         -J dast-report.json || true
 
-          # Run ZAP container targeting port 8081
-          docker run --rm --network="host" -v $WORKSPACE:/zap/wrk -t ghcr.io/zaproxy/zaproxy:weekly \
-            zap-baseline.py \
-            -t http://localhost:8081 \
-            -r dast-report.html \
-            -J dast-report.json || true
-
-          docker rm -f python-zaptest || true
-        '''
-      }
-    }
+         docker rm -f python-zaptest || true
+       '''
+  }
+}
 
     stage('10. Update K8s Deployment YAML & Git Push') {
       steps {

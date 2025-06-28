@@ -103,26 +103,30 @@ pipeline {
     }
 
     stage('9. OWASP ZAP DAST Scan & Report') {
-      steps {
+    steps {
         sh '''
-          set -e
-          echo "🚀 Starting application container for ZAP DAST..."
-          docker rm -f python-zaptest || true
-          docker run -d --name python-zaptest --network host $ECR_REPO:$BUILD_TAG
+        echo 🚀 Starting application container for ZAP DAST...
+        docker rm -f python-zaptest || true
+        docker run -d --name python-zaptest --network host development/namespace:29
 
-          echo "⏳ Waiting for app to be ready..."
-          sleep 30
+        echo ⏳ Waiting for app to be ready...
+        for i in {1..15}; do
+          curl -s http://localhost:5000 && break
+          echo "Waiting..."; sleep 5
+        done
 
-          echo "🛡️ Running OWASP ZAP scan..."
-          docker run --rm --network host -v "$WORKSPACE:/zap/wrk" \
-            -t ghcr.io/zaproxy/zaproxy:weekly \
-            zap-baseline.py -t http://localhost:8081 \
-            -r dast-report.html -J dast-report.json || true
+        echo 🛡️ Running OWASP ZAP scan...
+        docker run --rm --network host \
+          -v $(pwd):/zap/wrk \
+          -t ghcr.io/zaproxy/zaproxy:weekly \
+          zap-baseline.py -t http://localhost:5000 \
+          -r dast-report.html -J dast-report.json || true
 
-          docker rm -f python-zaptest || true
+        docker rm -f python-zaptest || true
         '''
-      }
     }
+}
+
 
     stage('10. Update K8s Deployment YAML & Git Push') {
       steps {

@@ -107,20 +107,16 @@ pipeline {
         sh '''
           set -e
 
-          # Create Docker network for internal communication
-          docker network create zap-net || true
-
-          # Run app container in that network
           docker rm -f python-zaptest || true
-          docker run -d --name python-zaptest --network zap-net -p 8081:8080 development/namespace:$BUILD_TAG
+
+          docker run -d --name python-zaptest -p 8081:8080 $ECR_REPO:$BUILD_TAG
 
           echo "⏳ Waiting for app to be ready..."
           sleep 30
 
-          # Run ZAP scan from another container using container name (thanks to network)
-          docker run --rm -v "$WORKSPACE:/zap/wrk" --network zap-net \
+          docker run --rm -v "$WORKSPACE:/zap/wrk" \
             -t ghcr.io/zaproxy/zaproxy:weekly \
-            zap-baseline.py -t http://python-zaptest:8081 \
+            zap-baseline.py -t http://13.127.245.180:8081 \
             -r dast-report.html -J dast-report.json || true
 
           docker rm -f python-zaptest || true

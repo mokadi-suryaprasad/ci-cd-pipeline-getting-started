@@ -106,17 +106,17 @@ pipeline {
       steps {
         sh '''
           set -e
-
+          echo "🚀 Starting application container for ZAP DAST..."
           docker rm -f python-zaptest || true
-
-          docker run -d --name python-zaptest -p 8081:8080 $ECR_REPO:$BUILD_TAG
+          docker run -d --name python-zaptest --network host $ECR_REPO:$BUILD_TAG
 
           echo "⏳ Waiting for app to be ready..."
           sleep 30
 
-          docker run --rm -v "$WORKSPACE:/zap/wrk" \
+          echo "🛡️ Running OWASP ZAP scan..."
+          docker run --rm --network host -v "$WORKSPACE:/zap/wrk" \
             -t ghcr.io/zaproxy/zaproxy:weekly \
-            zap-baseline.py -t http://13.127.245.180:8081 \
+            zap-baseline.py -t http://localhost:8081 \
             -r dast-report.html -J dast-report.json || true
 
           docker rm -f python-zaptest || true
@@ -136,7 +136,7 @@ pipeline {
               git config --global user.email "mspr9773@gmail.com"
               git config --global user.name "M Surya Prasad"
               git add deploy/kubernetes/deployment.yaml
-              git commit -m "Update image tag to ${BUILD_TAG}" || echo 'No changes to commit'
+              git commit -m "Update image tag to ${BUILD_TAG}" || echo '⚠️ No changes to commit'
               git push https://${GIT_USER}:${GIT_PASS}@github.com/mokadi-suryaprasad/python-demoapp.git HEAD:main
             """
           }

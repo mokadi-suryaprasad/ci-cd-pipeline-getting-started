@@ -14,7 +14,7 @@ pipeline {
       }
     }
 
-    stage('2. Setup Python Virtual Environment & Install Dependencies') {
+    stage('2. Setup Python Environment & Install Dependencies') {
       steps {
         sh '''
           set -e
@@ -28,13 +28,13 @@ pipeline {
 
     stage('3. Run Unit Tests') {
       steps {
-        sh 'echo "No Test cases running"'
+        sh 'echo "No unit tests defined for now."'
       }
     }
 
     stage('4. SonarQube Scan') {
       steps {
-        echo '🔍 Running SonarQube Scan for Python project'
+        echo '🔍 Running SonarQube Scan'
         withSonarQubeEnv('sonar') {
           withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
             sh '''
@@ -103,27 +103,28 @@ pipeline {
     }
 
     stage('9. OWASP ZAP DAST Scan & Report') {
-     steps {
+      steps {
         sh '''
           set -e
+          docker network create zap-net || true
           docker rm -f python-zaptest || true
-          docker run -d -p 8081:8080 --name python-zaptest development/namespace:$BUILD_TAG
-          sleep 60  # increased wait time for app to be ready
 
-          docker run --rm --network="host" \
-          -v $WORKSPACE:/zap/wrk:rw \
-         -t ghcr.io/zaproxy/zaproxy:weekly \
-         zap-baseline.py \
-         -t http://localhost:8081 \
-         -r dast-report.html \
-         -J dast-report.json || true
+          docker run -d --network zap-net --name python-zaptest -p 8081:8080 $ECR_REPO:$BUILD_TAG
 
-         docker rm -f python-zaptest || true
-       '''
-  }
-}
+          echo "⏳ Waiting for app to be ready..."
+          sleep 30
 
-    stage('10. Update K8s Deployment YAML & Git Push') {
+          docker run --rm --network zap-net -v "$WORKSPACE:/zap/wrk" \
+            -t ghcr.io/zaproxy/zaproxy:weekly \
+            zap-baseline.py -t http://python-zaptest:8080 \
+            -r dast-report.html -J dast-report.json || true
+
+          docker rm -f python-zaptest || true
+        '''
+      }
+    }
+
+    stage('10. Update K8s YAML & Git Push') {
       steps {
         script {
           def ecr_url = "023703779855.dkr.ecr.${env.AWS_REGION}.amazonaws.com/${env.ECR_REPO}"
@@ -150,7 +151,10 @@ pipeline {
       publishHTML(target: [
         reportDir: '.', 
         reportFiles: 'dast-report.html', 
-        reportName: 'OWASP ZAP DAST Report'
+        reportName: 'OWASP ZAP DAST Report',
+        keepAll: true,
+        alwaysLinkToLastBuild: true,
+        allowMissing: true
       ])
       cleanWs()
     }

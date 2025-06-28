@@ -107,13 +107,18 @@ pipeline {
         sh '''
           set -e
           docker rm -f python-zaptest || true
-          docker run -d -p 8081:8080 --name python-zaptest development/namespace:17
+
+          # Run app container on port 8081 to avoid Jenkins 8080 conflict
+          docker run -d -p 8081:8080 --name python-zaptest $ECR_REPO:$BUILD_TAG
           sleep 20
-          docker run --rm --network="host" -v $WORKSPACE:/zap/wrk -t owasp/zap2docker-weekly \
+
+          # Run ZAP container targeting port 8081
+          docker run --rm --network="host" -v $WORKSPACE:/zap/wrk -t ghcr.io/zaproxy/zaproxy:weekly \
             zap-baseline.py \
-            -t http://localhost:8080 \
+            -t http://localhost:8081 \
             -r dast-report.html \
             -J dast-report.json || true
+
           docker rm -f python-zaptest || true
         '''
       }

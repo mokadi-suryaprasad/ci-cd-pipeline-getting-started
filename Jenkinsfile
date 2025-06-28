@@ -106,17 +106,21 @@ pipeline {
       steps {
         sh '''
           set -e
-          docker network create zap-net || true
-          docker rm -f python-zaptest || true
 
-          docker run -d --network zap-net --name python-zaptest -p 8081:8080 $ECR_REPO:$BUILD_TAG
+          # Run app container on host-accessible port
+          docker rm -f python-zaptest || true
+          docker run -d --name python-zaptest -p 8081:8080 development/namespace:$BUILD_TAG
 
           echo "⏳ Waiting for app to be ready..."
           sleep 30
 
-          docker run --rm --network zap-net -v "$WORKSPACE:/zap/wrk" \
+          # Get host IP inside Jenkins container
+          HOST_IP=$(ip route | awk '/default/ { print $3 }')
+
+          # Run ZAP scan from another container using host IP and mapped port
+          docker run --rm -v "$WORKSPACE:/zap/wrk" \
             -t ghcr.io/zaproxy/zaproxy:weekly \
-            zap-baseline.py -t http://python-zaptest:8080 \
+            zap-baseline.py -t http://$HOST_IP:8081 \
             -r dast-report.html -J dast-report.json || true
 
           docker rm -f python-zaptest || true
@@ -124,7 +128,7 @@ pipeline {
       }
     }
 
-    stage('10. Update K8s YAML & Git Push') {
+    stage('10. Update K8s Deployment YAML & Git Push') {
       steps {
         script {
           def ecr_url = "023703779855.dkr.ecr.${env.AWS_REGION}.amazonaws.com/${env.ECR_REPO}"
